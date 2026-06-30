@@ -1,16 +1,33 @@
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const env = require("./config/env");
 const routes = require("./routes");
 const {
   errorHandler,
   notFoundHandler,
 } = require("./middleware/errorHandler");
 
+function createCorsMiddleware() {
+  return cors({
+    origin(origin, callback) {
+      if (
+        !origin ||
+        env.corsOrigins.includes(origin) ||
+        env.nodeEnv === "development"
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+  });
+}
+
 function createApp() {
   const app = express();
 
-  app.use(cors());
+  app.use(createCorsMiddleware());
   app.use(express.json());
   if (process.env.NODE_ENV !== "test") {
     app.use(morgan("dev"));

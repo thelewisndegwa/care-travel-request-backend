@@ -227,6 +227,13 @@ describe("request scoping and workflow", () => {
     expect(resubmitResponse.body.history[0].decision.comment).toBe(
       "Please add more detail."
     );
+
+    const approveAfterResubmit = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/approve`)
+      .set("Authorization", `Bearer ${managerToken}`);
+
+    expect(approveAfterResubmit.status).toBe(200);
+    expect(approveAfterResubmit.body.status).toBe("approved");
   });
 
   it("prevents a non-approver admin from approving someone else's request", async () => {

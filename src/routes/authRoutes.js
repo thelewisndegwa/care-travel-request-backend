@@ -10,16 +10,16 @@ const { validationErrorHandler } = require("../middleware/errorHandler");
 
 const router = express.Router();
 
-router.post("/login", loginValidator, validationErrorHandler, asyncHandler(login));
+router.post("/login", ...loginValidator, validationErrorHandler, asyncHandler(login));
 router.post(
   "/activate",
-  activateAccountValidator,
+  ...activateAccountValidator,
   validationErrorHandler,
   asyncHandler(activateAccount)
 );
 router.post(
   "/set-password",
-  setPasswordValidator,
+  ...setPasswordValidator,
   validationErrorHandler,
   asyncHandler(setPassword)
 );

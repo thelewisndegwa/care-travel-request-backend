@@ -40,12 +40,30 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - `GMAIL_USER`: Gmail address used to send mail.
 - `GMAIL_APP_PASSWORD`: Gmail app password (not your normal Gmail password).
 - `EMAIL_FROM`: Sender address shown to recipients.
-- `FRONTEND_URL`: Base URL used in account activation links.
+- `FRONTEND_URL`: Base URL used in account activation links (must match where you serve `care-travel-request-frontend`, e.g. `http://localhost:5500`).
+
+## Frontend integration
+
+This API is designed to work with the static frontend at `care-travel-request-frontend`:
+
+1. Set `FRONTEND_URL` in `.env` to your frontend origin (Live Server is usually `http://localhost:5500`).
+2. Start the API on port **5000**: `npm start`
+3. Serve the frontend on a **different** port and open `frontend/login.html`.
+4. The frontend calls `http://127.0.0.1:5000/api` by default.
+
+For local testing without email:
+
+```bash
+npm run seed
+```
+
+Test logins: `alice@example.com` / `Password123!` (see `scripts/seed.js` for all roles).
 
 ## Available Scripts
 - `npm run dev`: Start the API with `nodemon`.
 - `npm start`: Start the API with Node.
 - `npm test`: Run the Jest test suite.
+- `npm run seed`: Create test users with passwords for local login.
 
 ## API Overview
 - `POST /api/auth/login`

@@ -130,7 +130,7 @@ async function approveRequest(req, res) {
   requestDocument.decision = {
     decidedBy: req.user.id,
     decidedAt: new Date(),
-    comment: req.body.comment || null,
+    comment: req.body?.comment || null,
   };
 
   await requestDocument.save();
@@ -174,7 +174,7 @@ async function rejectRequest(req, res) {
   requestDocument.decision = {
     decidedBy: req.user.id,
     decidedAt: new Date(),
-    comment: req.body.comment,
+    comment: req.body?.comment,
   };
 
   await requestDocument.save();
@@ -183,7 +183,7 @@ async function rejectRequest(req, res) {
     action: "request_rejected",
     performedBy: req.user.id,
     targetRequest: requestDocument._id,
-    metadata: { comment: req.body.comment },
+    metadata: { comment: req.body?.comment ?? null },
   });
 
   await notifyUser(requestDocument.requestedBy, "rejected", requestDocument);

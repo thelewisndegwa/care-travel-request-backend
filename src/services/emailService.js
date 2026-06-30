@@ -44,7 +44,7 @@ async function sendEmail(to, subject, html) {
 }
 
 function buildActivationEmail(user, inviteToken) {
-  const activationUrl = `${env.frontendUrl}/activate?email=${encodeURIComponent(user.email)}&token=${inviteToken}`;
+  const activationUrl = `${env.frontendUrl.replace(/\/+$/, "")}/activate.html?email=${encodeURIComponent(user.email)}&token=${inviteToken}`;
 
   return {
     subject: "Activate your CARE travel request account",
