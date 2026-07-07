@@ -56,6 +56,9 @@ const env = {
   emailFrom: process.env.EMAIL_FROM || process.env.GMAIL_USER || "",
   frontendUrl,
   corsOrigins: buildCorsOrigins(frontendUrl),
+  cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
+  cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || "",
+  cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || "",
 };
 
 module.exports = env;

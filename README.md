@@ -70,6 +70,11 @@ Test logins: `alice@example.com` / `Password123!` (see `scripts/seed.js` for all
 - `POST /api/auth/activate`
 - `POST /api/auth/set-password`
 - `POST /api/admin/import-employees` (superadmin, multipart file upload)
+- `POST /api/reimbursements`
+- `GET /api/reimbursements/my-requests`
+- `GET /api/reimbursements/pending-approvals` (admin)
+- `GET /api/reimbursements/:id`
+- `PATCH /api/reimbursements/:id/status` (admin/superadmin)
 - `GET /api/users/me`
 - `GET /api/users`
 - `GET /api/users/my-team`

@@ -1,6 +1,9 @@
 const { body } = require("express-validator");
 
 const travelRequestBaseValidators = [
+  body("selected_approver_id")
+    .isMongoId()
+    .withMessage("A valid selected approver ID is required"),
   body("project.name").isString().notEmpty().withMessage("Project name is required"),
   body("project.businessUnit").isString().notEmpty().withMessage("Business unit is required"),
   body("project.fundCode").isString().notEmpty().withMessage("Fund code is required"),

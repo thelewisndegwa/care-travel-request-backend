@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const { listEligibleApprovers } = require("../services/approverService");
 
 async function getMe(req, res) {
   const user = await User.findById(req.user.id).select("-passwordHash");
@@ -18,8 +19,14 @@ async function getMyTeam(req, res) {
   return res.json(users);
 }
 
+async function listApprovers(req, res) {
+  const approvers = await listEligibleApprovers();
+  return res.json(approvers);
+}
+
 module.exports = {
   getMe,
   listUsers,
   getMyTeam,
+  listApprovers,
 };

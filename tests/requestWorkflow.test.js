@@ -35,8 +35,9 @@ async function login(email, password = "Password123!") {
   return response.body.token;
 }
 
-function buildRequestPayload(overrides = {}) {
+function buildRequestPayload(selectedApproverId, overrides = {}) {
   return {
+    selected_approver_id: selectedApproverId,
     project: {
       name: "WE4R",
       businessUnit: "KEN03",
@@ -134,13 +135,13 @@ describe("request scoping and workflow", () => {
 
     await TravelRequest.create({
       requestedBy: requester._id,
-      approver: manager._id,
-      ...buildRequestPayload(),
+      selected_approver_id: manager._id,
+      ...buildRequestPayload(manager._id),
     });
     await TravelRequest.create({
       requestedBy: anotherRequester._id,
-      approver: manager._id,
-      ...buildRequestPayload({ purposeOfTrip: "Other trip" }),
+      selected_approver_id: manager._id,
+      ...buildRequestPayload(manager._id, { purposeOfTrip: "Other trip" }),
     });
 
     const token = await login(requester.email);
@@ -170,7 +171,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${createToken}`)
-      .send(buildRequestPayload());
+      .send(buildRequestPayload(manager._id));
 
     const approveToken = await login(manager.email);
     const approveResponse = await request(app)
@@ -200,7 +201,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildRequestPayload());
+      .send(buildRequestPayload(manager._id));
 
     const managerToken = await login(manager.email);
     const rejectResponse = await request(app)
@@ -214,7 +215,7 @@ describe("request scoping and workflow", () => {
       .patch(`/api/requests/${createResponse.body._id}`)
       .set("Authorization", `Bearer ${requesterToken}`)
       .send(
-        buildRequestPayload({
+        buildRequestPayload(manager._id, {
           purposeOfTrip: "Updated field monitoring visit",
         })
       );
@@ -257,7 +258,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildRequestPayload());
+      .send(buildRequestPayload(manager._id));
 
     const otherAdminToken = await login(otherAdmin.email);
     const approveResponse = await request(app)
@@ -282,15 +283,17 @@ describe("request scoping and workflow", () => {
 
     await TravelRequest.create({
       requestedBy: requester._id,
-      approver: manager._id,
+      selected_approver_id: manager._id,
       status: "pending",
-      ...buildRequestPayload({ purposeOfTrip: "Kisumu monitoring visit" }),
+      ...buildRequestPayload(manager._id, {
+        purposeOfTrip: "Kisumu monitoring visit",
+      }),
     });
     await TravelRequest.create({
       requestedBy: requester._id,
-      approver: manager._id,
+      selected_approver_id: manager._id,
       status: "approved",
-      ...buildRequestPayload({ purposeOfTrip: "Nairobi workshop" }),
+      ...buildRequestPayload(manager._id, { purposeOfTrip: "Nairobi workshop" }),
     });
 
     const token = await login(manager.email);
@@ -302,5 +305,101 @@ describe("request scoping and workflow", () => {
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].status).toBe("pending");
     expect(response.body.data[0].purposeOfTrip).toContain("Kisumu");
+  });
+
+  it("lists eligible approvers for authenticated users", async () => {
+    const admin = await createUser({
+      name: "Approver Admin",
+      email: "approver@example.com",
+      role: "admin",
+    });
+    await createUser({
+      name: "Read Only Superadmin",
+      email: "superadmin@example.com",
+      role: "superadmin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester@example.com",
+    });
+
+    const token = await login(requester.email);
+    const response = await request(app)
+      .get("/api/users/approvers")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]._id).toBe(admin._id.toString());
+  });
+
+  it("marks all notifications as read for the authenticated user", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester@example.com",
+    });
+
+    await Notification.create([
+      {
+        recipient: requester._id,
+        type: "approved",
+        request: new mongoose.Types.ObjectId(),
+        message: "Approved one",
+      },
+      {
+        recipient: requester._id,
+        type: "rejected",
+        request: new mongoose.Types.ObjectId(),
+        message: "Rejected two",
+      },
+      {
+        recipient: manager._id,
+        type: "new_request",
+        request: new mongoose.Types.ObjectId(),
+        message: "Other user notification",
+      },
+    ]);
+
+    const token = await login(requester.email);
+    const response = await request(app)
+      .patch("/api/notifications/mark-all-read")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.updatedCount).toBe(2);
+
+    const requesterNotifications = await Notification.find({ recipient: requester._id });
+    expect(requesterNotifications.every((item) => item.read)).toBe(true);
+  });
+
+  it("downloads a travel request PDF", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester@example.com",
+      managerId: manager._id,
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(buildRequestPayload(manager._id));
+
+    const pdfResponse = await request(app)
+      .get(`/api/travel-requests/${createResponse.body._id}/pdf`)
+      .set("Authorization", `Bearer ${requesterToken}`);
+
+    expect(pdfResponse.status).toBe(200);
+    expect(pdfResponse.headers["content-type"]).toMatch(/application\/pdf/);
   });
 });

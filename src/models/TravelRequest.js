@@ -93,7 +93,7 @@ const travelRequestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    approver: {
+    selected_approver_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
@@ -154,7 +154,7 @@ const travelRequestSchema = new mongoose.Schema(
 );
 
 travelRequestSchema.index({ requestedBy: 1, createdAt: -1 });
-travelRequestSchema.index({ approver: 1, status: 1 });
+travelRequestSchema.index({ selected_approver_id: 1, status: 1 });
 travelRequestSchema.index({ status: 1 });
 
 module.exports = mongoose.model("TravelRequest", travelRequestSchema);

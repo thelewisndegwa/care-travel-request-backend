@@ -18,7 +18,7 @@ async function buildRequestScope(user) {
       $or: [
         { requestedBy: user.id },
         { requestedBy: { $in: directReportIds } },
-        { approver: user.id },
+        { selected_approver_id: user.id },
       ],
     };
   }
@@ -34,9 +34,9 @@ async function canAccessRequest(user, request) {
   const requesterId = request.requestedBy?._id
     ? request.requestedBy._id.toString()
     : request.requestedBy.toString();
-  const approverId = request.approver?._id
-    ? request.approver._id.toString()
-    : request.approver.toString();
+  const approverId = request.selected_approver_id?._id
+    ? request.selected_approver_id._id.toString()
+    : request.selected_approver_id.toString();
 
   if (user.role === "admin") {
     if (requesterId === user.id || approverId === user.id) {
@@ -59,21 +59,12 @@ async function ensureCanAccessRequest(user, request) {
 }
 
 function ensureApprover(user, request) {
-  const approverId = request.approver?._id
-    ? request.approver._id.toString()
-    : request.approver.toString();
+  const approverId = request.selected_approver_id?._id
+    ? request.selected_approver_id._id.toString()
+    : request.selected_approver_id.toString();
 
   if (user.role !== "admin" || approverId !== user.id) {
     throw new HttpError(403, "Only the assigned approver can perform this action");
-  }
-
-  const requester = request.requestedBy;
-  const requesterManagerId = requester?.managerId?._id
-    ? requester.managerId._id.toString()
-    : requester?.managerId?.toString();
-
-  if (!requesterManagerId || requesterManagerId !== user.id) {
-    throw new HttpError(403, "You can only approve requests from people you manage");
   }
 }
 

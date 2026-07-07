@@ -9,6 +9,11 @@ const auditLogSchema = new mongoose.Schema(
         "request_approved",
         "request_rejected",
         "request_resubmitted",
+        "reimbursement_created",
+        "reimbursement_updated",
+        "reimbursement_approved",
+        "reimbursement_rejected",
+        "reimbursement_liquidated",
       ],
       required: true,
     },
@@ -20,7 +25,12 @@ const auditLogSchema = new mongoose.Schema(
     targetRequest: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "TravelRequest",
-      required: true,
+      default: null,
+    },
+    targetReimbursement: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ReimbursementReport",
+      default: null,
     },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
@@ -37,6 +47,7 @@ const auditLogSchema = new mongoose.Schema(
 );
 
 auditLogSchema.index({ targetRequest: 1, timestamp: -1 });
+auditLogSchema.index({ targetReimbursement: 1, timestamp: -1 });
 auditLogSchema.index({ performedBy: 1, timestamp: -1 });
 
 module.exports = mongoose.model("AuditLog", auditLogSchema);

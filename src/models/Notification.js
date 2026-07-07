@@ -9,13 +9,26 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["new_request", "approved", "rejected", "resubmitted"],
+      enum: [
+        "new_request",
+        "approved",
+        "rejected",
+        "resubmitted",
+        "reimbursement_submitted",
+        "reimbursement_approved",
+        "reimbursement_rejected",
+      ],
       required: true,
     },
     request: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "TravelRequest",
-      required: true,
+      default: null,
+    },
+    reimbursement: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ReimbursementReport",
+      default: null,
     },
     message: {
       type: String,
