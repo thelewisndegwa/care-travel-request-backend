@@ -35,32 +35,49 @@ async function buildRequestFilters(query, user) {
   }
 
   if (query.requestedByEmail && (user.role === "admin" || user.role === "superadmin")) {
-    const requester = await User.findOne({
-      email: String(query.requestedByEmail).toLowerCase(),
+    const pattern = {
+      $regex: escapeRegex(String(query.requestedByEmail).trim()),
+      $options: "i",
+    };
+
+    const requesters = await User.find({
+      $or: [{ email: pattern }, { name: pattern }],
     }).select("_id");
 
-    if (!requester) {
+    if (!requesters.length) {
       return { _id: null };
     }
 
-    filters.push({ requestedBy: requester._id });
+    filters.push({ requestedBy: { $in: requesters.map((person) => person._id) } });
   }
 
   if (query.search && (user.role === "admin" || user.role === "superadmin")) {
     const pattern = {
-      $regex: escapeRegex(query.search),
+      $regex: escapeRegex(String(query.search).trim()),
       $options: "i",
     };
 
-    filters.push({
-      $or: [
-        { purposeOfTrip: pattern },
-        { assignedAreaOfOperation: pattern },
-        { "itinerary.destination": pattern },
-        { "project.name": pattern },
-        { "project.businessUnit": pattern },
-      ],
-    });
+    const matchingRequesters = await User.find({
+      $or: [{ email: pattern }, { name: pattern }],
+    }).select("_id");
+
+    const searchClauses = [
+      { purposeOfTrip: pattern },
+      { assignedAreaOfOperation: pattern },
+      { "itinerary.destination": pattern },
+      { "project.name": pattern },
+      { "project.businessUnit": pattern },
+      { "passengers.name": pattern },
+      { "passengers.employeeNumber": pattern },
+    ];
+
+    if (matchingRequesters.length) {
+      searchClauses.push({
+        requestedBy: { $in: matchingRequesters.map((person) => person._id) },
+      });
+    }
+
+    filters.push({ $or: searchClauses });
   }
 
   if (!filters.length) {
