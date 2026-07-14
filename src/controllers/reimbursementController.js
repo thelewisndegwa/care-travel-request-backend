@@ -19,6 +19,10 @@ const {
   ensureReportApprover,
 } = require("../services/reimbursementAccessService");
 const {
+  buildReimbursementFilters,
+  mergeReimbursementScope,
+} = require("../services/reimbursementFilterService");
+const {
   getReimbursementPopulateQuery,
   populateReport,
   buildReimbursementResponse,
@@ -102,7 +106,15 @@ async function createReimbursement(req, res) {
 }
 
 async function getMyReimbursements(req, res) {
-  const filter = req.user.role === "superadmin" ? {} : { submittedBy: req.user.id };
+  const scope =
+    req.user.role === "superadmin" ? {} : { submittedBy: req.user.id };
+  const queryFilters = await buildReimbursementFilters(req.query, req.user);
+  const filter = mergeReimbursementScope(scope, queryFilters);
+
+  if (filter._id === null) {
+    return res.json([]);
+  }
+
   const reports = await getReimbursementPopulateQuery(
     ReimbursementReport.find(filter).sort({ createdAt: -1 })
   );
@@ -124,7 +136,14 @@ async function getPendingApprovals(req, res) {
 }
 
 async function getTeamReimbursements(req, res) {
-  const filter = await buildReimbursementTeamScope(req.user);
+  const scope = await buildReimbursementTeamScope(req.user);
+  const queryFilters = await buildReimbursementFilters(req.query, req.user);
+  const filter = mergeReimbursementScope(scope, queryFilters);
+
+  if (filter._id === null) {
+    return res.json([]);
+  }
+
   const reports = await getReimbursementPopulateQuery(
     ReimbursementReport.find(filter).sort({ createdAt: -1 })
   );
