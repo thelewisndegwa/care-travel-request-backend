@@ -7,6 +7,7 @@ const {
   createTravelRequestValidator,
   resubmitTravelRequestValidator,
   rejectTravelRequestValidator,
+  approveTravelRequestValidator,
 } = require("../validators/requestValidators");
 const {
   createRequest,
@@ -42,6 +43,8 @@ router.get("/:id", asyncHandler(getRequestById));
 router.patch(
   "/:id/approve",
   requireRole("admin"),
+  approveTravelRequestValidator,
+  validationErrorHandler,
   asyncHandler(approveRequest)
 );
 

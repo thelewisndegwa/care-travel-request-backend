@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const morgan = require("morgan");
 const env = require("./config/env");
 const routes = require("./routes");
@@ -19,7 +20,7 @@ function createCorsMiddleware() {
         return callback(null, true);
       }
 
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      return callback(null, false);
     },
   });
 }
@@ -27,8 +28,9 @@ function createCorsMiddleware() {
 function createApp() {
   const app = express();
 
+  app.use(helmet());
   app.use(createCorsMiddleware());
-  app.use(express.json());
+  app.use(express.json({ limit: "1mb" }));
   if (process.env.NODE_ENV !== "test") {
     app.use(morgan("dev"));
   }

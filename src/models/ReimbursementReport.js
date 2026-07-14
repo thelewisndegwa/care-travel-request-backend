@@ -20,6 +20,29 @@ const decisionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const historySchema = new mongoose.Schema(
+  {
+    snapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      required: true,
+    },
+    decision: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    editedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 const reimbursementReportSchema = new mongoose.Schema(
   {
     travelRequest: {
@@ -59,7 +82,7 @@ const reimbursementReportSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected", "liquidated"],
+      enum: ["pending", "approved", "rejected"],
       default: "pending",
     },
     totalAmountKsh: {
@@ -71,15 +94,20 @@ const reimbursementReportSchema = new mongoose.Schema(
       type: decisionSchema,
       default: () => ({}),
     },
+    version: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    history: {
+      type: [historySchema],
+      default: [],
+    },
     submittedAt: {
       type: Date,
       default: Date.now,
     },
     approvedAt: {
-      type: Date,
-      default: null,
-    },
-    liquidatedAt: {
       type: Date,
       default: null,
     },

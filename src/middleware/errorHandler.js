@@ -22,6 +22,21 @@ function errorHandler(error, req, res, next) {
     return next(error);
   }
 
+  if (error.name === "CastError") {
+    return res.status(400).json({
+      message: "Invalid identifier",
+      details: error.path ? { path: error.path } : undefined,
+    });
+  }
+
+  if (error.name === "MulterError") {
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "File too large (max 5MB)"
+        : error.message || "Upload failed";
+    return res.status(400).json({ message });
+  }
+
   const statusCode = error.statusCode || 500;
 
   return res.status(statusCode).json({

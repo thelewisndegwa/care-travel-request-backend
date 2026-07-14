@@ -8,7 +8,7 @@ const scopeRequestQuery = asyncHandler(async (req, res, next) => {
     throw new HttpError(401, "Authentication required");
   }
 
-  const scope = await buildRequestScope(req.user);
+  const scope = await buildRequestScope(req.user, req.query.scope);
   const filters = await buildRequestFilters(req.query, req.user);
 
   if (filters._id === null) {

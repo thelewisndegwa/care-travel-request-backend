@@ -9,7 +9,9 @@ const upload = multer({
     const extension = path.extname(file.originalname).toLowerCase();
 
     if (![".xlsx", ".xls"].includes(extension)) {
-      return callback(new Error("Only .xlsx and .xls files are allowed"));
+      const error = new Error("Only .xlsx and .xls files are allowed");
+      error.statusCode = 400;
+      return callback(error);
     }
 
     return callback(null, true);

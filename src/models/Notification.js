@@ -11,10 +11,12 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       enum: [
         "new_request",
+        "passenger_added",
         "approved",
         "rejected",
         "resubmitted",
         "reimbursement_submitted",
+        "reimbursement_resubmitted",
         "reimbursement_approved",
         "reimbursement_rejected",
       ],

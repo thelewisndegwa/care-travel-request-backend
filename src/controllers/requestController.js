@@ -1,9 +1,13 @@
 const TravelRequest = require("../models/TravelRequest");
 const User = require("../models/User");
 const HttpError = require("../utils/httpError");
-const { notifyTravelRequestUser } = require("../services/notificationService");
+const {
+  notifyTravelRequestUser,
+  notifyTravelRequestPassengers,
+} = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
 const { getEligibleApproverById } = require("../services/approverService");
+const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const {
   ensureCanAccessRequest,
@@ -23,12 +27,9 @@ const {
   applyRequestResubmission,
 } = require("../services/travelRequestService");
 
-function normalizePassengers(passengers = []) {
-  return passengers.map((passenger) => ({
-    user: passenger.user || null,
-    employeeNumber: passenger.employeeNumber || null,
-    name: passenger.name,
-  }));
+async function resolveApproverForRequest(approverId, requesterId, passengers) {
+  const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
+  return getEligibleApproverById(approverId, { excludeUserIds });
 }
 
 async function createRequest(req, res) {
@@ -38,7 +39,12 @@ async function createRequest(req, res) {
     throw new HttpError(404, "Requester not found");
   }
 
-  const approver = await getEligibleApproverById(req.body.selected_approver_id);
+  const passengers = await resolvePassengers(req.body.passengers);
+  const approver = await resolveApproverForRequest(
+    req.body.selected_approver_id,
+    requester._id,
+    passengers
+  );
 
   const requestDocument = await TravelRequest.create({
     requestedBy: requester._id,
@@ -48,7 +54,7 @@ async function createRequest(req, res) {
     purposeOfTrip: req.body.purposeOfTrip,
     modeOfTravel: req.body.modeOfTravel || {},
     itinerary: req.body.itinerary,
-    passengers: normalizePassengers(req.body.passengers),
+    passengers,
     submittedAt: new Date(),
   });
 
@@ -59,6 +65,7 @@ async function createRequest(req, res) {
     metadata: { status: requestDocument.status },
   });
 
+  await notifyTravelRequestPassengers(requestDocument, "new_request");
   await notifyTravelRequestUser(approver, "new_request", requestDocument);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
@@ -117,7 +124,7 @@ async function approveRequest(req, res) {
     metadata: { comment: requestDocument.decision.comment },
   });
 
-  await notifyTravelRequestUser(requestDocument.requestedBy, "approved", requestDocument);
+  await notifyTravelRequestPassengers(requestDocument, "approved");
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -151,7 +158,12 @@ async function rejectRequest(req, res) {
     metadata: { comment: req.body?.comment ?? null },
   });
 
-  await notifyTravelRequestUser(requestDocument.requestedBy, "rejected", requestDocument);
+  await notifyTravelRequestPassengers(requestDocument, "rejected");
+
+  const requester = requestDocument.requestedBy;
+  if (requester && !isPassengerOnRequest(requestDocument, requester)) {
+    await notifyTravelRequestUser(requester, "rejected", requestDocument);
+  }
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -173,7 +185,12 @@ async function resubmitRequest(req, res) {
     throw new HttpError(400, "Only rejected requests can be edited and resubmitted");
   }
 
-  const approver = await getEligibleApproverById(req.body.selected_approver_id);
+  const passengers = await resolvePassengers(req.body.passengers);
+  const approver = await resolveApproverForRequest(
+    req.body.selected_approver_id,
+    req.user.id,
+    passengers
+  );
 
   requestDocument.history.push({
     snapshot: getEditableRequestSnapshot(requestDocument),
@@ -182,12 +199,7 @@ async function resubmitRequest(req, res) {
     editedAt: new Date(),
   });
 
-  applyRequestResubmission(
-    requestDocument,
-    req.body,
-    approver._id,
-    normalizePassengers(req.body.passengers)
-  );
+  applyRequestResubmission(requestDocument, req.body, approver._id, passengers);
 
   await requestDocument.save();
 
@@ -198,6 +210,7 @@ async function resubmitRequest(req, res) {
     metadata: { version: requestDocument.version },
   });
 
+  await notifyTravelRequestPassengers(requestDocument, "resubmitted");
   await notifyTravelRequestUser(approver, "resubmitted", requestDocument);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
@@ -208,10 +221,9 @@ async function resubmitRequest(req, res) {
 async function getPendingMyApproval(req, res) {
   const requests = await getTravelRequestPopulateQuery(
     TravelRequest.find({
-    selected_approver_id: req.user.id,
-    status: "pending",
-  })
-      .sort({ createdAt: -1 })
+      selected_approver_id: req.user.id,
+      status: "pending",
+    }).sort({ createdAt: -1 })
   );
 
   return res.json(requests);

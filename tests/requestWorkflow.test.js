@@ -35,6 +35,14 @@ async function login(email, password = "Password123!") {
   return response.body.token;
 }
 
+function passengerFor(user) {
+  return {
+    user: user._id.toString(),
+    name: user.name,
+    employeeNumber: user.employeeNumber || "1600",
+  };
+}
+
 function buildRequestPayload(selectedApproverId, overrides = {}) {
   return {
     selected_approver_id: selectedApproverId,
@@ -116,6 +124,66 @@ describe("authentication and authorization", () => {
 });
 
 describe("request scoping and workflow", () => {
+  it("lets passengers see travel requests raised for them", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager@example.com",
+      role: "admin",
+    });
+    const booker = await createUser({
+      name: "Booker One",
+      email: "booker@example.com",
+      managerId: manager._id,
+    });
+    const traveller = await createUser({
+      name: "Traveller One",
+      email: "traveller@example.com",
+      managerId: manager._id,
+      employeeNumber: "1800",
+    });
+
+    const bookerToken = await login(booker.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${bookerToken}`)
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(traveller)] }));
+
+    expect(createResponse.status).toBe(201);
+
+    const travellerToken = await login(traveller.email);
+    const listResponse = await request(app)
+      .get("/api/requests")
+      .set("Authorization", `Bearer ${travellerToken}`);
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.data).toHaveLength(1);
+    expect(listResponse.body.data[0]._id).toBe(createResponse.body._id);
+
+    const passengerNotifications = await Notification.find({
+      recipient: traveller._id,
+      type: "new_request",
+    });
+    expect(passengerNotifications).toHaveLength(1);
+    expect(passengerNotifications[0].message).toMatch(/listed as a passenger/i);
+  });
+
+  it("prevents managers from selecting themselves as approver", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager@example.com",
+      role: "admin",
+    });
+
+    const managerToken = await login(manager.email);
+    const response = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(manager)] }));
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/cannot approve their own/i);
+  });
+
   it("limits normal users to their own requests", async () => {
     const manager = await createUser({
       name: "Manager Admin",
@@ -136,12 +204,17 @@ describe("request scoping and workflow", () => {
     await TravelRequest.create({
       requestedBy: requester._id,
       selected_approver_id: manager._id,
-      ...buildRequestPayload(manager._id),
+      ...buildRequestPayload(manager._id, {
+        passengers: [passengerFor(requester)],
+      }),
     });
     await TravelRequest.create({
       requestedBy: anotherRequester._id,
       selected_approver_id: manager._id,
-      ...buildRequestPayload(manager._id, { purposeOfTrip: "Other trip" }),
+      ...buildRequestPayload(manager._id, {
+        purposeOfTrip: "Other trip",
+        passengers: [passengerFor(anotherRequester)],
+      }),
     });
 
     const token = await login(requester.email);
@@ -171,7 +244,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${createToken}`)
-      .send(buildRequestPayload(manager._id));
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
     const approveToken = await login(manager.email);
     const approveResponse = await request(app)
@@ -201,7 +274,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildRequestPayload(manager._id));
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
     const managerToken = await login(manager.email);
     const rejectResponse = await request(app)
@@ -217,6 +290,7 @@ describe("request scoping and workflow", () => {
       .send(
         buildRequestPayload(manager._id, {
           purposeOfTrip: "Updated field monitoring visit",
+          passengers: [passengerFor(requester)],
         })
       );
 
@@ -258,7 +332,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildRequestPayload(manager._id));
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
     const otherAdminToken = await login(otherAdmin.email);
     const approveResponse = await request(app)
@@ -287,13 +361,17 @@ describe("request scoping and workflow", () => {
       status: "pending",
       ...buildRequestPayload(manager._id, {
         purposeOfTrip: "Kisumu monitoring visit",
+        passengers: [passengerFor(requester)],
       }),
     });
     await TravelRequest.create({
       requestedBy: requester._id,
       selected_approver_id: manager._id,
       status: "approved",
-      ...buildRequestPayload(manager._id, { purposeOfTrip: "Nairobi workshop" }),
+      ...buildRequestPayload(manager._id, {
+        purposeOfTrip: "Nairobi workshop",
+        passengers: [passengerFor(requester)],
+      }),
     });
 
     const token = await login(manager.email);
@@ -331,6 +409,50 @@ describe("request scoping and workflow", () => {
     expect(response.status).toBe(200);
     expect(response.body).toHaveLength(1);
     expect(response.body[0]._id).toBe(admin._id.toString());
+  });
+
+  it("lists eligible passengers for authenticated users", async () => {
+    const admin = await createUser({
+      name: "Approver Admin",
+      email: "approver@example.com",
+      role: "admin",
+      employeeNumber: "1700",
+    });
+    const superadmin = await createUser({
+      name: "Read Only Superadmin",
+      email: "superadmin@example.com",
+      role: "superadmin",
+    });
+    const colleague = await createUser({
+      name: "Colleague One",
+      email: "colleague@example.com",
+      employeeNumber: "1701",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester@example.com",
+      employeeNumber: "1702",
+    });
+
+    const token = await login(requester.email);
+    const response = await request(app)
+      .get("/api/users/passengers")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(3);
+
+    const ids = response.body.map((user) => user._id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        admin._id.toString(),
+        colleague._id.toString(),
+        requester._id.toString(),
+      ])
+    );
+    expect(ids).not.toContain(superadmin._id.toString());
+    expect(response.body[0]).toHaveProperty("employeeNumber");
+    expect(response.body[0]).not.toHaveProperty("passwordHash");
   });
 
   it("marks all notifications as read for the authenticated user", async () => {
@@ -393,7 +515,7 @@ describe("request scoping and workflow", () => {
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildRequestPayload(manager._id));
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
     const pdfResponse = await request(app)
       .get(`/api/travel-requests/${createResponse.body._id}/pdf`)

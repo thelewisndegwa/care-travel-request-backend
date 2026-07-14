@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { EXPENSE_CATEGORIES } = require("../constants/expenseCategories");
 
 const expenseLineItemSchema = new mongoose.Schema(
   {
@@ -16,6 +17,12 @@ const expenseLineItemSchema = new mongoose.Schema(
       trim: true,
       required: true,
     },
+    category: {
+      type: String,
+      enum: EXPENSE_CATEGORIES,
+      required: true,
+      trim: true,
+    },
     description: {
       type: String,
       trim: true,
@@ -25,11 +32,6 @@ const expenseLineItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Decimal128,
       required: true,
       get: (value) => (value ? parseFloat(value.toString()) : 0),
-    },
-    receiptUrl: {
-      type: String,
-      trim: true,
-      default: null,
     },
   },
   {

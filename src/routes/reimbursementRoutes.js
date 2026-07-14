@@ -11,22 +11,26 @@ const {
   createReimbursement,
   getMyReimbursements,
   getPendingApprovals,
+  getTeamReimbursements,
   getReimbursementById,
   updateReimbursement,
   updateReimbursementStatus,
   downloadReimbursementPdf,
+  getExpenseCategories,
 } = require("../controllers/reimbursementController");
 
 const router = express.Router();
 
 router.use(authenticate);
 
+router.get("/expense-categories", asyncHandler(getExpenseCategories));
 router.get("/my-requests", asyncHandler(getMyReimbursements));
 router.get(
   "/pending-approvals",
   requireRole("admin"),
   asyncHandler(getPendingApprovals)
 );
+router.get("/team", requireRole("admin"), asyncHandler(getTeamReimbursements));
 
 router.post(
   "/",

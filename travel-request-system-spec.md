@@ -179,7 +179,9 @@ Auth: `POST /api/auth/login` → JWT containing `{ userId, role }`.
 |---|---|---|---|
 | GET | `/api/users/me` | all | Own profile |
 | GET | `/api/users` | superadmin | Full list |
-| GET | `/api/users/my-team` | admin | Direct reports only |
+| GET | `/api/users/approvers` | all | Eligible approvers for selection |
+| GET | `/api/users/passengers` | all | Eligible passengers for travel requests |
+| GET | `/api/requests?scope=team` | admin | Team-scoped travel request list (direct reports + related trips) |
 
 ---
 

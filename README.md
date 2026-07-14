@@ -5,12 +5,13 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 ## Features
 - JWT authentication with role-based access control for `user`, `admin`, and `superadmin`.
 - Account activation flow: imported users must set a password before logging in.
-- Manager-driven approval routing where the approver is derived from the requester's manager.
+- Approver selection via `selected_approver_id` (eligible admins), enforced on the server.
 - Travel request lifecycle support for create, approve, reject, and rejected-request resubmit.
+- Reimbursement reports with approve / reject and PDF download.
 - In-app notifications plus Gmail/Nodemailer email notifications.
-- Audit logging for request lifecycle events.
+- Audit logging for request and reimbursement lifecycle events.
 - Spreadsheet import via CLI or superadmin upload endpoint.
-- Request filtering and pagination for admins and superadmins.
+- Request filtering, list scopes (`mine` / `team` / `all`), and pagination.
 
 ## Tech Stack
 - Node.js
@@ -35,12 +36,13 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 ## Environment Variables
 - `PORT`: HTTP port for the API.
 - `MONGODB_URI`: MongoDB connection string.
-- `JWT_SECRET`: Secret used to sign JWTs.
+- `JWT_SECRET`: Secret used to sign JWTs (required strong value in production).
 - `JWT_EXPIRES_IN`: Token lifetime, for example `1d`.
 - `GMAIL_USER`: Gmail address used to send mail.
 - `GMAIL_APP_PASSWORD`: Gmail app password (not your normal Gmail password).
 - `EMAIL_FROM`: Sender address shown to recipients.
 - `FRONTEND_URL`: Base URL used in account activation links (must match where you serve `care-travel-request-frontend`, e.g. `http://localhost:5500`).
+- `NODE_ENV`: `development` | `test` | `production`.
 
 ## Frontend integration
 
@@ -57,7 +59,13 @@ For local testing without email:
 npm run seed
 ```
 
-Test logins: `alice@example.com` / `Password123!` (see `scripts/seed.js` for all roles).
+Test logins (password `Password123!`):
+- `manager@example.com` / `manager2@example.com` (admin)
+- `alice@example.com` / `bob@example.com` (user, under manager)
+- `carol@example.com` / `dana@example.com` (user, under manager2)
+- `super@example.com` (superadmin)
+
+`npm run seed` clears the database, then seeds users plus demo travel requests, reimbursements, notifications, and audit history.
 
 ## Available Scripts
 - `npm run dev`: Start the API with `nodemon`.
@@ -66,27 +74,48 @@ Test logins: `alice@example.com` / `Password123!` (see `scripts/seed.js` for all
 - `npm run seed`: Create test users with passwords for local login.
 
 ## API Overview
+
+### Auth (public; rate-limited)
 - `POST /api/auth/login`
 - `POST /api/auth/activate`
 - `POST /api/auth/set-password`
-- `POST /api/admin/import-employees` (superadmin, multipart file upload)
-- `POST /api/reimbursements`
-- `GET /api/reimbursements/my-requests`
-- `GET /api/reimbursements/pending-approvals` (admin)
-- `GET /api/reimbursements/:id`
-- `PATCH /api/reimbursements/:id/status` (admin/superadmin)
+
+### Health
+- `GET /api/health`
+
+### Users (JWT)
 - `GET /api/users/me`
-- `GET /api/users`
-- `GET /api/users/my-team`
-- `POST /api/requests`
-- `GET /api/requests`
+- `GET /api/users/approvers`
+- `GET /api/users/passengers`
+- `GET /api/users` (superadmin)
+
+### Travel requests (JWT)
+- `POST /api/requests` (user | admin)
+- `GET /api/requests` — query: `scope=mine|team|all`, `status`, `destination`, `dateFrom`, `dateTo`, `requestedByEmail`, `search`, `page`, `limit`
+- `GET /api/requests/pending-my-approval` (admin)
 - `GET /api/requests/:id`
-- `PATCH /api/requests/:id/approve`
-- `PATCH /api/requests/:id/reject`
-- `PATCH /api/requests/:id`
-- `GET /api/requests/pending-my-approval`
+- `PATCH /api/requests/:id/approve` (admin, assigned approver)
+- `PATCH /api/requests/:id/reject` (admin, assigned approver)
+- `PATCH /api/requests/:id` (resubmit rejected; user | admin owner)
+- `GET /api/travel-requests/:id/pdf`
+
+### Reimbursements (JWT)
+- `GET /api/reimbursements/expense-categories`
+- `GET /api/reimbursements/my-requests` (superadmin sees all)
+- `GET /api/reimbursements/pending-approvals` (admin)
+- `POST /api/reimbursements` (user | admin)
+- `GET /api/reimbursements/:id`
+- `PATCH /api/reimbursements/:id` (owner, rejected only)
+- `PATCH /api/reimbursements/:id/status` (admin — approve/reject)
+- `GET /api/reimbursements/:id/pdf`
+
+### Notifications (JWT)
 - `GET /api/notifications`
 - `PATCH /api/notifications/:id/read`
+- `PATCH /api/notifications/mark-all-read`
+
+### Admin (JWT)
+- `POST /api/admin/import-employees` (superadmin, multipart file upload)
 
 ## Account Activation Flow
 1. Import employees from Excel.
@@ -115,9 +144,11 @@ Re-import is safe for activated users:
 - Activated passwords, `superadmin` role, and completed activations are preserved.
 
 ## Request Filtering
-Admins and superadmins can filter list results:
+Admins and superadmins can filter list results. Any authenticated user may pass `scope=mine` to list only requests they raised or travel on.
 
 ```
+GET /api/requests?scope=mine
+GET /api/requests?scope=team
 GET /api/requests?status=pending&search=Kisumu&page=1&limit=20
 GET /api/requests?destination=Nairobi&dateFrom=2026-07-01&dateTo=2026-07-31
 GET /api/requests?requestedByEmail=alice@care.org

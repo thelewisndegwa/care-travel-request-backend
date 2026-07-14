@@ -154,6 +154,7 @@ const travelRequestSchema = new mongoose.Schema(
 );
 
 travelRequestSchema.index({ requestedBy: 1, createdAt: -1 });
+travelRequestSchema.index({ "passengers.user": 1, createdAt: -1 });
 travelRequestSchema.index({ selected_approver_id: 1, status: 1 });
 travelRequestSchema.index({ status: 1 });
 

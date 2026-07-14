@@ -1,4 +1,5 @@
 const { body } = require("express-validator");
+const { EXPENSE_CATEGORIES } = require("../constants/expenseCategories");
 
 const selectedApproverValidator = body("selected_approver_id")
   .isMongoId()
@@ -16,14 +17,17 @@ const reimbursementLineItemValidators = [
   body("lineItems").isArray({ min: 1 }).withMessage("At least one expense line item is required"),
   body("lineItems.*.expenseDate").isISO8601().withMessage("Each line item needs a valid expense date"),
   body("lineItems.*.location").isString().notEmpty().withMessage("Each line item needs a location"),
-  body("lineItems.*.description")
+  body("lineItems.*.category")
     .isString()
-    .notEmpty()
-    .withMessage("Each line item needs a description"),
+    .isIn(EXPENSE_CATEGORIES)
+    .withMessage(`Each line item category must be one of: ${EXPENSE_CATEGORIES.join(", ")}`),
+  body("lineItems.*.description")
+    .optional({ values: "falsy" })
+    .isString()
+    .withMessage("Line item description must be a string"),
   body("lineItems.*.amount")
     .isFloat({ min: 0.01 })
     .withMessage("Each line item amount must be greater than zero"),
-  body("lineItems.*.receiptUrl").optional({ values: "null" }).isString(),
 ];
 
 const createReimbursementValidator = [
@@ -39,8 +43,8 @@ const updateReimbursementValidator = [
 
 const updateReimbursementStatusValidator = [
   body("status")
-    .isIn(["approved", "rejected", "liquidated"])
-    .withMessage("Status must be approved, rejected, or liquidated"),
+    .isIn(["approved", "rejected"])
+    .withMessage("Status must be approved or rejected"),
   body("comment")
     .if(body("status").equals("rejected"))
     .isString()

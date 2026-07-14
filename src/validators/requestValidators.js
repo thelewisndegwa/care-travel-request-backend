@@ -15,6 +15,16 @@ const travelRequestBaseValidators = [
     .notEmpty()
     .withMessage("Assigned area of operation is required"),
   body("purposeOfTrip").isString().notEmpty().withMessage("Purpose of trip is required"),
+  body("modeOfTravel")
+    .custom((value) => {
+      if (!value || typeof value !== "object") {
+        throw new Error("At least one mode of travel is required");
+      }
+      if (!(value.careVehicle || value.publicTransport || value.aircraft)) {
+        throw new Error("At least one mode of travel is required");
+      }
+      return true;
+    }),
   body("modeOfTravel.careVehicle").optional().isBoolean(),
   body("modeOfTravel.publicTransport").optional().isBoolean(),
   body("modeOfTravel.aircraft").optional().isBoolean(),
@@ -22,10 +32,14 @@ const travelRequestBaseValidators = [
   body("itinerary.dateTo").isISO8601().withMessage("End date is required"),
   body("itinerary.destination").isString().notEmpty().withMessage("Destination is required"),
   body("itinerary.accommodationNeeded").optional().isBoolean(),
-  body("passengers").optional().isArray(),
-  body("passengers.*.user").optional().isMongoId(),
+  body("passengers")
+    .isArray({ min: 1 })
+    .withMessage("At least one passenger is required"),
+  body("passengers.*.user")
+    .isMongoId()
+    .withMessage("Each passenger must be a valid employee"),
   body("passengers.*.employeeNumber").optional().isString(),
-  body("passengers.*.name").optional().isString().notEmpty(),
+  body("passengers.*.name").optional().isString(),
 ];
 
 const createTravelRequestValidator = travelRequestBaseValidators;
@@ -36,8 +50,13 @@ const rejectTravelRequestValidator = [
   body("comment").isString().notEmpty().withMessage("Rejection comment is required"),
 ];
 
+const approveTravelRequestValidator = [
+  body("comment").optional({ values: "falsy" }).isString().withMessage("Comment must be a string"),
+];
+
 module.exports = {
   createTravelRequestValidator,
   resubmitTravelRequestValidator,
   rejectTravelRequestValidator,
+  approveTravelRequestValidator,
 };

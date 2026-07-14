@@ -19,7 +19,9 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new HttpError(401, "Invalid or expired token");
   }
 
-  const user = await User.findById(payload.userId).select("-passwordHash");
+  const user = await User.findById(payload.userId).select(
+    "-passwordHash -inviteToken -inviteTokenExpires"
+  );
 
   if (!user || !user.isActive) {
     throw new HttpError(401, "User account is unavailable");

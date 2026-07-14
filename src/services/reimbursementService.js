@@ -19,13 +19,18 @@ function toDecimal128(amount) {
 }
 
 function normalizeLineItems(lineItems = []) {
-  return lineItems.map((item) => ({
-    expenseDate: item.expenseDate,
-    location: item.location.trim(),
-    description: item.description.trim(),
-    amount: toDecimal128(item.amount),
-    receiptUrl: item.receiptUrl?.trim() || null,
-  }));
+  return lineItems.map((item) => {
+    const category = String(item.category || "").trim();
+    const description = String(item.description || "").trim() || category;
+
+    return {
+      expenseDate: item.expenseDate,
+      location: item.location.trim(),
+      category,
+      description,
+      amount: toDecimal128(item.amount),
+    };
+  });
 }
 
 async function recalculateReportTotal(reportId, session = null) {
@@ -102,23 +107,43 @@ async function replaceReportLineItems(reportId, lineItems) {
   );
 }
 
-function applyReimbursementUpdate(report, payload, approverId) {
+function getEditableReimbursementSnapshot(report, lineItems = []) {
+  return {
+    selected_approver_id: report.selected_approver_id,
+    employeeNumber: report.employeeNumber,
+    department: report.department,
+    position: report.position,
+    baseLocation: report.baseLocation,
+    totalAmountKsh: report.totalAmountKsh,
+    lineItems: lineItems.map((item) => ({
+      expenseDate: item.expenseDate,
+      location: item.location,
+      category: item.category,
+      description: item.description,
+      amount: item.amount,
+    })),
+  };
+}
+
+function resetReimbursementDecision(report) {
+  report.decision = {
+    decidedBy: null,
+    decidedAt: null,
+    comment: null,
+  };
+}
+
+function applyReimbursementResubmission(report, payload, approverId) {
   report.selected_approver_id = approverId;
   report.employeeNumber = payload.employeeNumber || report.employeeNumber;
   report.department = payload.department || report.department;
   report.position = payload.position || report.position;
   report.baseLocation = payload.baseLocation;
-}
-
-function applyLiquidation(report, decidedBy, comment) {
-  const now = new Date();
-  report.status = "liquidated";
-  report.liquidatedAt = now;
-  report.decision = {
-    decidedBy,
-    decidedAt: now,
-    comment: comment?.trim() || report.decision?.comment || null,
-  };
+  report.version += 1;
+  report.status = "pending";
+  report.approvedAt = null;
+  resetReimbursementDecision(report);
+  report.submittedAt = new Date();
 }
 
 function applyApprovalDecision(report, status, decidedBy, comment) {
@@ -149,7 +174,8 @@ module.exports = {
   buildReimbursementResponse,
   buildReimbursementDraftData,
   replaceReportLineItems,
-  applyReimbursementUpdate,
-  applyLiquidation,
+  getEditableReimbursementSnapshot,
+  resetReimbursementDecision,
+  applyReimbursementResubmission,
   applyApprovalDecision,
 };

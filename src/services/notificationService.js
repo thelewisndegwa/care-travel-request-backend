@@ -1,5 +1,6 @@
 const Notification = require("../models/Notification");
 const { sendEmail } = require("./emailService");
+const { loadPassengerUsers } = require("./passengerService");
 
 function buildNotificationEmail(recipientName, message, entityLabel, entityId) {
   return `
@@ -33,9 +34,39 @@ async function createAndSendNotification({
   return notification;
 }
 
-function buildTravelRequestNotificationContent(type, requestDocument) {
+function buildTravelRequestNotificationContent(type, requestDocument, audience = "approver") {
   const destination = requestDocument.itinerary.destination;
   const purpose = requestDocument.purposeOfTrip;
+
+  if (audience === "passenger") {
+    switch (type) {
+      case "new_request":
+        return {
+          subject: "You were added to a travel request",
+          message: `You were listed as a passenger on a travel request to ${destination} for ${purpose}. It is awaiting approval.`,
+        };
+      case "approved":
+        return {
+          subject: "Travel request approved",
+          message: `Your travel request to ${destination} for ${purpose} was approved.`,
+        };
+      case "rejected":
+        return {
+          subject: "Travel request rejected",
+          message: `Your travel request to ${destination} for ${purpose} was rejected.`,
+        };
+      case "resubmitted":
+        return {
+          subject: "Travel request resubmitted",
+          message: `A travel request to ${destination} for ${purpose} that lists you as a passenger was resubmitted for approval.`,
+        };
+      default:
+        return {
+          subject: "Travel request update",
+          message: `A travel request to ${destination} for ${purpose} that lists you as a passenger was updated.`,
+        };
+    }
+  }
 
   switch (type) {
     case "new_request":
@@ -76,6 +107,11 @@ function buildReimbursementNotificationContent(type, report) {
         subject: "New reimbursement awaiting approval",
         message: `A reimbursement request for ${destination} totaling KES ${amount} is awaiting your approval.`,
       };
+    case "reimbursement_resubmitted":
+      return {
+        subject: "Reimbursement resubmitted",
+        message: `A reimbursement request for ${destination} totaling KES ${amount} was edited and resubmitted for your review.`,
+      };
     case "reimbursement_approved":
       return {
         subject: "Reimbursement approved",
@@ -94,8 +130,12 @@ function buildReimbursementNotificationContent(type, report) {
   }
 }
 
-async function notifyTravelRequestUser(recipient, type, requestDocument) {
-  const content = buildTravelRequestNotificationContent(type, requestDocument);
+async function notifyTravelRequestUser(recipient, type, requestDocument, audience = "approver") {
+  if (!recipient) {
+    return null;
+  }
+
+  const content = buildTravelRequestNotificationContent(type, requestDocument, audience);
 
   return createAndSendNotification({
     recipient,
@@ -106,6 +146,19 @@ async function notifyTravelRequestUser(recipient, type, requestDocument) {
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });
+}
+
+async function notifyTravelRequestPassengers(requestDocument, type) {
+  const passengers = await loadPassengerUsers(requestDocument);
+  const results = [];
+
+  for (const passenger of passengers) {
+    results.push(
+      await notifyTravelRequestUser(passenger, type, requestDocument, "passenger")
+    );
+  }
+
+  return results;
 }
 
 async function notifyReimbursementUser(recipient, type, report) {
@@ -125,5 +178,6 @@ async function notifyReimbursementUser(recipient, type, report) {
 
 module.exports = {
   notifyTravelRequestUser,
+  notifyTravelRequestPassengers,
   notifyReimbursementUser,
 };

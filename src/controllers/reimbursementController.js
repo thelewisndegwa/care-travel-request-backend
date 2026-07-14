@@ -3,11 +3,17 @@ const TravelRequest = require("../models/TravelRequest");
 const ReimbursementReport = require("../models/ReimbursementReport");
 const ExpenseLineItem = require("../models/ExpenseLineItem");
 const HttpError = require("../utils/httpError");
+const { EXPENSE_CATEGORIES } = require("../constants/expenseCategories");
 const { createAuditLog } = require("../services/auditLogService");
 const { getEligibleApproverById } = require("../services/approverService");
 const { notifyReimbursementUser } = require("../services/notificationService");
 const { buildReimbursementPdf } = require("../services/pdfService");
 const {
+  ensureUserCanClaimReimbursement,
+  ensureApproverNotOnRequest,
+} = require("../services/passengerService");
+const {
+  buildReimbursementTeamScope,
   ensureCanAccessReport,
   ensureReportOwner,
   ensureReportApprover,
@@ -21,8 +27,8 @@ const {
   recalculateReportTotal,
   attachLineItems,
   replaceReportLineItems,
-  applyReimbursementUpdate,
-  applyLiquidation,
+  getEditableReimbursementSnapshot,
+  applyReimbursementResubmission,
   applyApprovalDecision,
 } = require("../services/reimbursementService");
 
@@ -43,11 +49,12 @@ async function createReimbursement(req, res) {
     throw new HttpError(400, "Reimbursement requires an approved travel request");
   }
 
-  if (travelRequest.requestedBy.toString() !== submitter._id.toString()) {
-    throw new HttpError(403, "You can only submit reimbursement for your own travel");
-  }
+  ensureUserCanClaimReimbursement(travelRequest, submitter._id);
 
-  const approver = await getEligibleApproverById(req.body.selected_approver_id);
+  const approver = await getEligibleApproverById(req.body.selected_approver_id, {
+    excludeUserIds: [submitter._id],
+  });
+  ensureApproverNotOnRequest(approver._id, submitter._id, travelRequest.passengers);
 
   const lineItems = normalizeLineItems(req.body.lineItems);
   let report;
@@ -74,7 +81,7 @@ async function createReimbursement(req, res) {
     if (error.code === 11000) {
       throw new HttpError(
         409,
-        "A reimbursement report already exists for this travel request"
+        "A reimbursement report already exists for this passenger on this travel request"
       );
     }
 
@@ -116,6 +123,16 @@ async function getPendingApprovals(req, res) {
   return res.json(data);
 }
 
+async function getTeamReimbursements(req, res) {
+  const filter = await buildReimbursementTeamScope(req.user);
+  const reports = await getReimbursementPopulateQuery(
+    ReimbursementReport.find(filter).sort({ createdAt: -1 })
+  );
+
+  const data = await attachLineItems(reports);
+  return res.json(data);
+}
+
 async function getReimbursementById(req, res) {
   const report = await populateReport(req.params.id);
 
@@ -123,9 +140,10 @@ async function getReimbursementById(req, res) {
     throw new HttpError(404, "Reimbursement report not found");
   }
 
-  ensureCanAccessReport(req.user, report);
+  await ensureCanAccessReport(req.user, report);
 
-  return res.json(await buildReimbursementResponse(report._id));
+  const [response] = await attachLineItems([report]);
+  return res.json(response);
 }
 
 async function updateReimbursement(req, res) {
@@ -137,14 +155,24 @@ async function updateReimbursement(req, res) {
 
   ensureReportOwner(req.user, report);
 
-  if (report.status !== "pending") {
-    throw new HttpError(400, "Only pending reimbursement reports can be updated");
+  if (report.status !== "rejected") {
+    throw new HttpError(400, "Only rejected reimbursement reports can be edited and resubmitted");
   }
 
   const approver = await getEligibleApproverById(req.body.selected_approver_id);
   const lineItems = normalizeLineItems(req.body.lineItems);
+  const existingLineItems = await ExpenseLineItem.find({ report: report._id }).sort({
+    expenseDate: 1,
+  });
 
-  applyReimbursementUpdate(report, req.body, approver._id);
+  report.history.push({
+    snapshot: getEditableReimbursementSnapshot(report, existingLineItems),
+    status: report.status,
+    decision: report.decision,
+    editedAt: new Date(),
+  });
+
+  applyReimbursementResubmission(report, req.body, approver._id);
 
   await report.save();
 
@@ -152,13 +180,15 @@ async function updateReimbursement(req, res) {
   await recalculateReportTotal(report._id);
 
   await createAuditLog({
-    action: "reimbursement_updated",
+    action: "reimbursement_resubmitted",
     performedBy: req.user.id,
     targetReimbursement: report._id,
-    metadata: { status: report.status },
+    metadata: { version: report.version },
   });
 
   const response = await buildReimbursementResponse(report._id);
+  await notifyReimbursementUser(approver, "reimbursement_resubmitted", response);
+
   return res.json(response);
 }
 
@@ -174,39 +204,22 @@ async function updateReimbursementStatus(req, res) {
     throw new HttpError(404, "Reimbursement report not found");
   }
 
-  if (status === "liquidated") {
-    if (report.status !== "approved") {
-      throw new HttpError(400, "Only approved reports can be liquidated");
-    }
+  ensureReportApprover(req.user, report);
 
-    applyLiquidation(report, req.user.id, comment);
-
-    await report.save();
-
-    await createAuditLog({
-      action: "reimbursement_liquidated",
-      performedBy: req.user.id,
-      targetReimbursement: report._id,
-      metadata: { status: "liquidated" },
-    });
-  } else {
-    ensureReportApprover(req.user, report);
-
-    if (report.status !== "pending") {
-      throw new HttpError(400, "Only pending reports can be approved or rejected");
-    }
-
-    applyApprovalDecision(report, status, req.user.id, comment);
-
-    await report.save();
-
-    await createAuditLog({
-      action: status === "approved" ? "reimbursement_approved" : "reimbursement_rejected",
-      performedBy: req.user.id,
-      targetReimbursement: report._id,
-      metadata: { status: report.status, comment: report.decision.comment },
-    });
+  if (report.status !== "pending") {
+    throw new HttpError(400, "Only pending reports can be approved or rejected");
   }
+
+  applyApprovalDecision(report, status, req.user.id, comment);
+
+  await report.save();
+
+  await createAuditLog({
+    action: status === "approved" ? "reimbursement_approved" : "reimbursement_rejected",
+    performedBy: req.user.id,
+    targetReimbursement: report._id,
+    metadata: { status: report.status, comment: report.decision.comment },
+  });
 
   const response = await buildReimbursementResponse(report._id);
 
@@ -226,23 +239,24 @@ async function downloadReimbursementPdf(req, res) {
     throw new HttpError(404, "Reimbursement report not found");
   }
 
-  ensureCanAccessReport(req.user, report);
+  await ensureCanAccessReport(req.user, report);
 
-  buildReimbursementPdf(res, await buildReimbursementResponse(report._id));
+  const [response] = await attachLineItems([report]);
+  buildReimbursementPdf(res, response);
 }
 
-async function deleteReimbursementReport(reportId) {
-  await ExpenseLineItem.deleteMany({ report: reportId });
-  await ReimbursementReport.findByIdAndDelete(reportId);
+function getExpenseCategories(req, res) {
+  res.json({ categories: EXPENSE_CATEGORIES });
 }
 
 module.exports = {
   createReimbursement,
   getMyReimbursements,
   getPendingApprovals,
+  getTeamReimbursements,
   getReimbursementById,
   updateReimbursement,
   updateReimbursementStatus,
   downloadReimbursementPdf,
-  deleteReimbursementReport,
+  getExpenseCategories,
 };
